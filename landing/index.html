@@ -69,10 +69,7 @@
     box-shadow:inset 0 0 220px rgba(0,0,0,.9);
   }
 
-  /* ---- corner-bracket "viewfinder" utility (pure CSS, 4 corners) ----
-     Rendered as an ::after overlay (not a background on the element itself)
-     so it always sits on top of child media (<img>/<video>) instead of
-     being covered by it. */
+
   .af{ position:relative; }
   .af::after{
     content:''; position:absolute; inset:0; z-index:5; pointer-events:none;
@@ -329,7 +326,7 @@
     <h1 class="reveal in">Long-form in.<br>Ranked <span class="accent">shorts</span> out.</h1>
     <p class="hero-sub reveal in">ClipRadar transcribes a podcast or YouTube video locally, scores every possible moment on 8 explainable signals, and hands back vertical clips — captioned, thumbnailed, titled — with a plain-English reason for every pick.</p>
     <div class="hero-ctas reveal in">
-      <a class="btn btn-primary" href="https://github.com/YOUR-USERNAME/clipradar" target="_blank" rel="noopener">View source on GitHub →</a>
+      <a class="btn btn-primary" href="https://github.com/stephcode-bit/clipradar" target="_blank" rel="noopener">View source on GitHub →</a>
       <a class="btn btn-ghost" href="#demo">Watch the 29s demo ↓</a>
     </div>
 
