@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClipRadar — Explainable auto-clipping for creators</title>
+<meta name="description" content="Long-form video in. Ranked, ready-to-post vertical clips out — with a reason for every pick. Built for the Social Media Automation Hackathon.">
+<link rel="icon" href="assets/favicon/favicon.svg" type="image/svg+xml">
+<link rel="alternate icon" href="assets/favicon/favicon.ico" sizes="any">
+<link rel="icon" href="assets/favicon/favicon-32x32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="assets/favicon/favicon-16x16.png" sizes="16x16" type="image/png">
+<link rel="apple-touch-icon" href="assets/favicon/apple-touch-icon.png">
+<link rel="manifest" href="assets/favicon/site.webmanifest">
+<meta name="theme-color" content="#000000">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script>document.documentElement.classList.add('js');</script>
+<style>
+  :root{
+    --bg: #000000;
+    --bg-raised: #0a0a0a;
+    --bg-card: #0d0d0d;
+    --border: #1e1e1e;
+    --border-hover: #333333;
+    --ink: #f5f5f2;
+    --ink-dim: #929290;
+    --ink-faint: #4c4c4a;
+    --red: #ff2d55;
+    --red-dim: #ff2d5522;
+    --green: #5dffa0;
+    --green-dim: #5dffa022;
+    --amber: #ffb020;
+    --amber-dim: #ffb02022;
+    --display: 'Archivo Black', 'Archivo', system-ui, sans-serif;
+    --body: 'Archivo', system-ui, sans-serif;
+    --mono: 'JetBrains Mono', monospace;
+  }
+
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html{scroll-behavior:smooth;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:var(--body);
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  ::selection{ background:var(--red); color:#000; }
+  a{ color:inherit; }
+  .wrap{ max-width:1160px; margin:0 auto; padding:0 28px; }
+  .mono{ font-family:var(--mono); }
+
+  /* ---- texture layers ---- */
+  .noise{
+    position:fixed; inset:0; pointer-events:none; z-index:1;
+    opacity:.05; mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .scanline{
+    position:fixed; left:0; right:0; height:140px; z-index:2; pointer-events:none;
+    background:linear-gradient(180deg, transparent, rgba(255,45,85,.05) 45%, rgba(255,45,85,.08) 50%, rgba(255,45,85,.05) 55%, transparent);
+    animation:sweep 9s linear infinite;
+  }
+  @keyframes sweep{ 0%{ top:-140px; } 100%{ top:100vh; } }
+  .vignette{
+    position:fixed; inset:0; z-index:1; pointer-events:none;
+    box-shadow:inset 0 0 220px rgba(0,0,0,.9);
+  }
+
+  /* ---- corner-bracket "viewfinder" utility (pure CSS, 4 corners) ----
+     Rendered as an ::after overlay (not a background on the element itself)
+     so it always sits on top of child media (<img>/<video>) instead of
+     being covered by it. */
+  .af{ position:relative; }
+  .af::after{
+    content:''; position:absolute; inset:0; z-index:5; pointer-events:none;
+    background-image:
+      linear-gradient(var(--af-c,var(--red)),var(--af-c,var(--red))), linear-gradient(var(--af-c,var(--red)),var(--af-c,var(--red))),
+      linear-gradient(var(--af-c,var(--red)),var(--af-c,var(--red))), linear-gradient(var(--af-c,var(--red)),var(--af-c,var(--red))),
+      linear-gradient(var(--af-c,var(--red)),var(--af-c,var(--red))), linear-gradient(var(--af-c,var(--red)),var(--af-c,var(--red))),
+      linear-gradient(var(--af-c,var(--red)),var(--af-c,var(--red))), linear-gradient(var(--af-c,var(--red)),var(--af-c,var(--red)));
+    background-repeat:no-repeat;
+    background-size: var(--af-len,16px) var(--af-w,2px), var(--af-w,2px) var(--af-len,16px);
+    background-position:
+      top var(--af-in,0) left var(--af-in,0), top var(--af-in,0) left var(--af-in,0),
+      top var(--af-in,0) right var(--af-in,0), top var(--af-in,0) right var(--af-in,0),
+      bottom var(--af-in,0) left var(--af-in,0), bottom var(--af-in,0) left var(--af-in,0),
+      bottom var(--af-in,0) right var(--af-in,0), bottom var(--af-in,0) right var(--af-in,0);
+  }
+
+  /* ---- top status strip ---- */
+  .statusbar{
+    position:relative; z-index:20; border-bottom:1px solid var(--border);
+    background:#000;
+  }
+  .statusbar .wrap{
+    display:flex; align-items:center; justify-content:space-between;
+    height:34px; font-family:var(--mono); font-size:11px; letter-spacing:.06em; color:var(--ink-faint);
+  }
+  .statusbar .rec{ display:flex; align-items:center; gap:8px; color:var(--red); }
+  .rec-dot{ width:7px; height:7px; border-radius:50%; background:var(--red); animation:blink 1.4s step-start infinite; }
+  @keyframes blink{ 50%{ opacity:.15; } }
+  .statusbar .right{ display:flex; gap:22px; }
+  .statusbar .right span{ color:var(--ink-faint); }
+
+  /* ---- nav ---- */
+  nav{ position:sticky; top:0; z-index:50; background:#000; border-bottom:1px solid var(--border); }
+  nav .wrap{ display:flex; align-items:center; justify-content:space-between; padding-top:16px; padding-bottom:16px; }
+  .brand{ display:flex; align-items:center; gap:10px; font-family:var(--display); font-weight:400; font-size:19px; letter-spacing:-0.01em; text-transform:uppercase; }
+  .brand .dot{ width:9px; height:9px; background:var(--red); box-shadow:0 0 14px var(--red); }
+  .navlinks{ display:flex; align-items:center; gap:0; font-family:var(--mono); font-size:12px; color:var(--ink-dim); }
+  .navlinks a{ text-decoration:none; transition:color .2s, background .2s; padding:8px 16px; border-left:1px solid var(--border); }
+  .navlinks a:hover{ color:var(--ink); background:var(--bg-card); }
+  .btn{
+    display:inline-flex; align-items:center; gap:8px;
+    font-family:var(--mono); font-size:12px; font-weight:700; letter-spacing:.03em; text-transform:uppercase;
+    padding:11px 18px; text-decoration:none;
+    border:1px solid var(--border-hover);
+    transition:transform .15s ease, border-color .15s ease, background .15s ease, color .15s ease;
+  }
+  .btn:hover{ transform:translateY(-2px); border-color:var(--red); }
+  .btn-primary{ background:var(--red); color:#000; border-color:var(--red); font-weight:800; }
+  .btn-primary:hover{ background:#ff4a6d; box-shadow:0 8px 24px -6px var(--red-dim); }
+  .btn-ghost{ color:var(--ink); }
+
+  /* ---- hero ---- */
+  header.hero{ position:relative; z-index:2; padding:64px 0 32px; }
+  .eyebrow{
+    font-family:var(--mono); font-size:11px; letter-spacing:.18em; color:var(--red);
+    display:inline-flex; align-items:center; gap:10px; margin-bottom:22px; text-transform:uppercase;
+  }
+  .eyebrow::before{ content:'▸'; }
+  h1{
+    font-family:var(--display); font-weight:400; letter-spacing:-0.01em;
+    text-transform:uppercase;
+    font-size:clamp(38px, 6.6vw, 88px); line-height:0.94; max-width:17ch;
+  }
+  h1 .accent{ color:var(--red); }
+  .hero-sub{ margin-top:24px; font-size:18px; color:var(--ink-dim); max-width:56ch; line-height:1.65; }
+  .hero-ctas{ display:flex; gap:14px; margin-top:34px; flex-wrap:wrap; }
+
+  /* timeline ruler */
+  .ruler{ position:relative; margin-top:52px; padding-top:18px; border-top:1px solid var(--border); }
+  .ruler-ticks{ position:relative; height:26px; }
+  .tick{ position:absolute; top:0; width:1px; height:8px; background:var(--border-hover); }
+  .tick.major{ height:14px; background:var(--ink-faint); }
+  .tick-label{ position:absolute; top:16px; font-family:var(--mono); font-size:10px; color:var(--ink-faint); transform:translateX(-50%); }
+  .playhead{
+    position:absolute; top:-1px; width:2px; height:26px; background:var(--red); box-shadow:0 0 10px var(--red);
+    animation:scrub 6s cubic-bezier(.6,0,.4,1) infinite;
+  }
+  .playhead::before{
+    content:''; position:absolute; top:-5px; left:50%; translate:-50% 0;
+    width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent; border-top:6px solid var(--red);
+  }
+  @keyframes scrub{ 0%{ left:0%; } 45%{ left:100%; } 50%{ left:100%; } 95%{ left:0%; } 100%{ left:0%; } }
+  .marker{
+    position:absolute; top:-1px; padding:2px 8px; font-family:var(--mono); font-size:10px; font-weight:700;
+    background:var(--green); color:#000; white-space:nowrap; translate:0 -100%;
+  }
+  .marker.pink{ background:var(--red); color:#000; }
+
+  .reveal{ opacity:1; }
+  .js .reveal{ opacity:0; transform:translateY(16px); transition:opacity .6s ease, transform .6s ease; }
+  .reveal.in{ opacity:1; transform:none; }
+  .stagger > *{ transition-delay:calc(var(--i, 0) * 80ms); }
+
+  /* video showcase */
+  .phone-stage{ position:relative; z-index:2; margin:60px auto 0; max-width:1160px; display:grid; grid-template-columns:1fr 1fr; gap:56px; align-items:center; }
+  .phone-shell{ position:relative; justify-self:center; }
+  .phone{
+    position:relative; width:270px; padding:8px;
+    background:#050505; border:1px solid var(--border-hover);
+    --af-c:var(--red); --af-len:20px; --af-w:2px; --af-in:-1px;
+  }
+  .phone video{ width:100%; display:block; aspect-ratio:9/16; object-fit:cover; background:#000; }
+  .hud{
+    position:absolute; top:16px; left:16px; right:16px; z-index:3;
+    display:flex; justify-content:space-between; font-family:var(--mono); font-size:10px; color:var(--red);
+    text-shadow:0 0 6px rgba(255,45,85,.6);
+  }
+  .hud .rec{ display:flex; align-items:center; gap:5px; }
+  .hud .rec .rec-dot{ width:6px; height:6px; }
+  .showcase-copy .kicker{ font-family:var(--mono); font-size:11px; color:var(--green); letter-spacing:.12em; margin-bottom:14px; text-transform:uppercase; }
+  .showcase-copy h2{ font-family:var(--display); font-weight:400; text-transform:uppercase; font-size:clamp(24px,3vw,32px); letter-spacing:-.005em; margin-bottom:16px; line-height:1.08; }
+  .showcase-copy p{ color:var(--ink-dim); font-size:16px; max-width:44ch; }
+  .showcase-note{ margin-top:20px; font-family:var(--mono); font-size:12px; color:var(--ink-faint); border-left:2px solid var(--border-hover); padding-left:14px; line-height:1.7; }
+
+  section{ position:relative; z-index:2; padding:96px 0; }
+  .section-head{ max-width:660px; margin-bottom:52px; }
+  .section-head .kicker{ font-family:var(--mono); font-size:11px; color:var(--red); letter-spacing:.15em; margin-bottom:14px; text-transform:uppercase; }
+  .section-head h2{ font-family:var(--display); font-weight:400; text-transform:uppercase; letter-spacing:-.005em; font-size:clamp(26px,4vw,42px); line-height:1.05; }
+  .section-head p{ margin-top:16px; color:var(--ink-dim); font-size:16.5px; }
+
+  /* problem */
+  .problem-block{ border-top:1px solid var(--border); border-bottom:1px solid var(--border); padding:60px 0; display:grid; grid-template-columns:1fr auto; gap:40px; align-items:center; }
+  .problem-block p{ font-family:var(--display); font-weight:400; text-transform:uppercase; font-size:clamp(22px,3.2vw,36px); letter-spacing:-.005em; line-height:1.22; max-width:20ch; }
+  .problem-block .highlight{ color:var(--red); }
+  .eq{ display:flex; align-items:flex-end; gap:4px; height:64px; }
+  .eq span{ width:6px; background:var(--green); animation:eqbar 1.1s ease-in-out infinite; }
+  @keyframes eqbar{ 0%,100%{ height:15%; } 50%{ height:100%; } }
+
+  /* steps as timeline clips */
+  .clip-track{ border:1px solid var(--border); }
+  .clip-row{ display:grid; grid-template-columns:110px 1fr; border-bottom:1px solid var(--border); }
+  .clip-row:last-child{ border-bottom:none; }
+  .clip-code{
+    font-family:var(--mono); font-size:12px; color:var(--ink-faint); padding:26px 20px;
+    border-right:1px solid var(--border); display:flex; flex-direction:column; justify-content:center; gap:6px;
+  }
+  .clip-code .n{ color:var(--red); font-size:20px; font-weight:700; }
+  .clip-body{ padding:26px 28px; transition:background .2s; }
+  .clip-body:hover{ background:var(--bg-card); }
+  .clip-body h3{ font-family:var(--display); font-weight:400; text-transform:uppercase; font-size:19px; letter-spacing:.01em; margin-bottom:8px; }
+  .clip-body p{ font-size:14.5px; color:var(--ink-dim); max-width:60ch; }
+
+  /* score section */
+  .score-grid{ display:grid; grid-template-columns:0.85fr 1.15fr; gap:60px; align-items:start; }
+  .score-headline{ font-family:var(--mono); }
+  .score-total{ font-family:var(--display); font-size:64px; color:var(--ink); text-transform:uppercase; }
+  .score-total .of{ color:var(--ink-faint); font-size:32px; }
+  .score-quote{ font-size:15px; color:var(--ink-dim); margin-top:14px; border-left:2px solid var(--border-hover); padding-left:14px; line-height:1.6; }
+  .score-still{ margin-top:26px; border:1px solid var(--border-hover); max-width:200px; }
+  .score-still img{ width:100%; display:block; }
+  .score-still-cap{ font-family:var(--mono); font-size:10px; color:var(--ink-faint); margin-top:8px; letter-spacing:.05em; }
+
+  .factor-list{ display:flex; flex-direction:column; }
+  .factor-row{ padding:16px 0; border-bottom:1px solid var(--border); }
+  .factor-row:first-child{ padding-top:0; }
+  .factor-top{ display:flex; justify-content:space-between; align-items:baseline; font-family:var(--mono); font-size:13px; margin-bottom:10px; }
+  .factor-top .fname{ color:var(--ink); letter-spacing:.03em; text-transform:uppercase; }
+  .factor-top .fweight{ color:var(--ink-faint); }
+  .factor-top .fscore{ font-size:15px; font-weight:700; }
+  .bar-track{ height:6px; background:var(--bg-card); border:1px solid var(--border); position:relative; }
+  .bar-fill{ height:100%; width:0; transition:width 1.1s cubic-bezier(.2,.7,.2,1); }
+  .factor-note{ margin-top:8px; font-size:13px; color:var(--ink-faint); }
+  .tier-green{ background:var(--green); }
+  .tier-amber{ background:var(--amber); }
+  .tier-red{ background:var(--red); }
+
+  /* proof gallery */
+  .gallery{ display:flex; gap:26px; justify-content:center; flex-wrap:wrap; }
+  .gcard{ width:220px; }
+  .gcard .frame{
+    border:1px solid var(--border-hover); overflow:hidden; position:relative;
+    --af-c:var(--red); --af-len:16px; --af-w:3px; --af-in:3px;
+    transition:transform .3s ease;
+  }
+  .gcard:hover .frame{ transform:translateY(-6px); }
+  .gcard img{ width:100%; display:block; }
+  .gcard .cap{ display:flex; justify-content:space-between; font-family:var(--mono); font-size:10.5px; color:var(--ink-faint); margin-top:10px; letter-spacing:.03em; }
+  .gcard .cap .score{ color:var(--green); }
+
+  /* judging grid */
+  .judge-grid{ display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--border); border:1px solid var(--border); }
+  .judge-card{ background:var(--bg-card); padding:34px; transition:background .2s; }
+  .judge-card:hover{ background:var(--bg-raised); }
+  .judge-card .pct{ font-family:var(--mono); color:var(--red); font-size:12px; letter-spacing:.06em; }
+  .judge-card h3{ font-family:var(--display); font-weight:400; text-transform:uppercase; font-size:20px; margin:14px 0 12px; letter-spacing:.005em; }
+  .judge-card p{ font-size:14.5px; color:var(--ink-dim); }
+
+  /* stack strip */
+  .stack{ display:flex; flex-wrap:wrap; gap:10px; }
+  .chip{ font-family:var(--mono); font-size:12px; color:var(--ink-dim); border:1px solid var(--border-hover); padding:8px 14px; }
+  .chip::before{ content:'// '; color:var(--ink-faint); }
+
+  footer{ position:relative; z-index:2; border-top:1px solid var(--border); padding:48px 0 36px; }
+  footer .wrap{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:20px; }
+  footer .fine{ font-family:var(--mono); font-size:12px; color:var(--ink-faint); }
+  footer .endreel{ font-family:var(--mono); font-size:11px; color:var(--red); letter-spacing:.1em; }
+
+  @media (max-width: 860px){
+    .phone-stage{ grid-template-columns:1fr; }
+    .score-grid{ grid-template-columns:1fr; }
+    .judge-grid{ grid-template-columns:1fr; }
+    .problem-block{ grid-template-columns:1fr; }
+    .clip-row{ grid-template-columns:80px 1fr; }
+  }
+  @media (max-width: 640px){
+    .wrap{ padding:0 18px; }
+    .navlinks{ display:none; }
+    .statusbar .right span:nth-child(2){ display:none; }
+    nav .wrap{ padding-top:14px; padding-bottom:14px; }
+    .btn{ padding:9px 14px; font-size:11px; }
+    header.hero{ padding:40px 0 20px; }
+    section{ padding:60px 0; }
+    .gallery{ gap:16px; }
+    .gcard{ width:44%; }
+    footer .wrap{ flex-direction:column; align-items:flex-start; }
+  }
+  @media (prefers-reduced-motion: reduce){
+    *, *::before, *::after{ animation-duration:.01ms !important; transition-duration:.01ms !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="noise"></div>
+<div class="scanline"></div>
+<div class="vignette"></div>
+
+<div class="statusbar">
+  <div class="wrap">
+    <div class="rec"><span class="rec-dot"></span><span>REC</span>&nbsp;<span id="tc" class="mono">00:00:00:00</span></div>
+    <div class="right">
+      <span>CLIPRADAR_MASTER.MOV</span>
+      <span>1080×1920 · 30FPS</span>
+    </div>
+  </div>
+</div>
+
+<nav>
+  <div class="wrap">
+    <div class="brand"><span class="dot"></span>ClipRadar</div>
+    <div class="navlinks">
+      <a href="#how">How it works</a>
+      <a href="#score">Scoring</a>
+      <a href="#judging">Why it wins</a>
+    </div>
+    <a class="btn btn-primary" href="https://github.com/YOUR-USERNAME/clipradar" target="_blank" rel="noopener">View on GitHub →</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow reveal in">SOCIAL MEDIA AUTOMATION HACKATHON</div>
+    <h1 class="reveal in">Long-form in.<br>Ranked <span class="accent">shorts</span> out.</h1>
+    <p class="hero-sub reveal in">ClipRadar transcribes a podcast or YouTube video locally, scores every possible moment on 8 explainable signals, and hands back vertical clips — captioned, thumbnailed, titled — with a plain-English reason for every pick.</p>
+    <div class="hero-ctas reveal in">
+      <a class="btn btn-primary" href="https://github.com/YOUR-USERNAME/clipradar" target="_blank" rel="noopener">View source on GitHub →</a>
+      <a class="btn btn-ghost" href="#demo">Watch the 29s demo ↓</a>
+    </div>
+
+    <div class="ruler reveal in">
+      <div class="ruler-ticks" id="ruler">
+        <div class="playhead"></div>
+        <div class="marker" style="left:15%">00:09 HOOK</div>
+        <div class="marker pink" style="left:63%">00:37 PAYOFF</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap phone-stage" id="demo">
+    <div class="phone-shell reveal">
+      <div class="phone af">
+        <div class="hud">
+          <span class="rec"><span class="rec-dot"></span>CAM_01</span>
+          <span id="vidtc">00:00:00</span>
+        </div>
+        <video autoplay muted loop playsinline id="demovid">
+          <source src="./assets/demo.webm" type="video/webm">
+          <source src="./assets/demo.mp4" type="video/mp4">
+        </video>
+      </div>
+    </div>
+    <div class="showcase-copy reveal">
+      <div class="kicker">// Real pipeline output</div>
+      <h2>Not a mockup. This ran end to end.</h2>
+      <p>Transcription, 8-factor scoring, vertical reframing, burned captions, thumbnail generation, and metadata — every frame after the title cards is the actual tool's output, unedited.</p>
+      <div class="showcase-note">SOURCE: synthetic offline test fixture (scripted narration via espeak-ng), used to verify the pipeline without live network access. Full report in /sample.</div>
+    </div>
+  </div>
+</header>
+
+<section class="problem-block">
+  <div class="wrap" style="display:contents;">
+    <div>
+      <p class="reveal">60 minutes of footage.<br><span class="highlight">Which 30 seconds actually hits?</span></p>
+      <div class="mono reveal" style="margin-top:24px; font-size:12px; color:var(--ink-faint);">EVERY CREATOR REPURPOSING LONG-FORM CONTENT HITS THIS EXACT WALL.</div>
+    </div>
+    <div class="eq reveal" aria-hidden="true">
+      <span style="animation-delay:0s"></span><span style="animation-delay:.1s"></span><span style="animation-delay:.2s"></span>
+      <span style="animation-delay:.15s"></span><span style="animation-delay:.3s"></span><span style="animation-delay:.05s"></span>
+      <span style="animation-delay:.25s"></span>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="kicker">How it works</div>
+      <h2>Four cuts, zero manual scrubbing.</h2>
+      <p>One command in, a folder of ready-to-post clips out.</p>
+    </div>
+    <div class="clip-track reveal">
+      <div class="clip-row"><div class="clip-code"><span class="n">C01</span>TRANSCRIBE</div><div class="clip-body"><h3>Transcribe locally</h3><p>faster-whisper, word-level timestamps. No API key, no per-minute cost.</p></div></div>
+      <div class="clip-row"><div class="clip-code"><span class="n">C02</span>SCORE</div><div class="clip-body"><h3>Score every moment</h3><p>8 independent, inspectable signals combine into one explainable 0–100 score.</p></div></div>
+      <div class="clip-row"><div class="clip-code"><span class="n">C03</span>REFRAME</div><div class="clip-body"><h3>Reframe + caption</h3><p>Blurred-fill vertical 9:16 render with word-synced pop-up captions burned in.</p></div></div>
+      <div class="clip-row"><div class="clip-code"><span class="n">C04</span>METADATA</div><div class="clip-body"><h3>Auto metadata</h3><p>Titles, description, hashtags generated from the actual clip content.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<section id="score">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="kicker">The actual differentiator</div>
+      <h2>Explainable, not a black box.</h2>
+      <p>Most auto-clip tools give you a pick with no reason attached. Every ClipRadar score ships with the exact factors that produced it — real signal computed from the transcript and audio, not an LLM's guess.</p>
+    </div>
+    <div class="score-grid">
+      <div class="reveal">
+        <div class="score-headline">
+          <div class="score-total">66.6<span class="of">/100</span></div>
+          <div class="score-quote">"Here's the thing nobody tells you about running a startup..." — clip 1, timecode 00:09–00:37</div>
+        </div>
+        <div class="score-still">
+          <img src="./assets/score-card.png" alt="Score breakdown still frame from the auto-generated demo video">
+        </div>
+        <div class="score-still-cap">FIG. A — RENDERED SCORE CARD (FROM /clipradar-video)</div>
+      </div>
+      <div class="factor-list reveal stagger" id="factorList">
+        <!-- populated by JS from real report data -->
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="kicker">Real rendered output</div>
+      <h2>Thumbnails, generated automatically.</h2>
+      <p>Clean source frame, bold hook-text overlay, score badge — pulled straight from the report.</p>
+    </div>
+    <div class="gallery reveal stagger">
+      <div class="gcard" style="--i:0">
+        <div class="frame af"><img src="./assets/clip1_thumb.jpg" alt="Auto-generated ClipRadar thumbnail, score 67"></div>
+        <div class="cap"><span>TC 00:09:00</span><span class="score">SCORE 67</span></div>
+      </div>
+      <div class="gcard" style="--i:1">
+        <div class="frame af"><img src="./assets/clip2_thumb.jpg" alt="Auto-generated ClipRadar thumbnail, score 62"></div>
+        <div class="cap"><span>TC 00:00:00</span><span class="score">SCORE 62</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="judging">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="kicker">Why this wins</div>
+      <h2>Built against the rubric, not around it.</h2>
+    </div>
+    <div class="judge-grid reveal stagger">
+      <div class="judge-card" style="--i:0"><div class="pct">[ FUNCTIONALITY — 30% ]</div><h3>It actually runs.</h3><p>Full pipeline verified end to end against a real rendered test case — transcription, scoring, vertical render, burned captions, thumbnail, report. Not a slide deck.</p></div>
+      <div class="judge-card" style="--i:1"><div class="pct">[ CREATIVITY — 20% ]</div><h3>Explainability as the feature.</h3><p>Most auto-clip tools are a black box or an LLM guess. ClipRadar's 8-factor scorer gives a defensible, inspectable reason for every pick.</p></div>
+      <div class="judge-card" style="--i:2"><div class="pct">[ TECHNICAL EXECUTION — 20% ]</div><h3>Clean, offline-first architecture.</h3><p>Modular pipeline, single-pass ffmpeg filter graphs, no unnecessary heavyweight deps, graceful optional Claude enhancement that never blocks a demo.</p></div>
+      <div class="judge-card" style="--i:3"><div class="pct">[ REAL-WORLD USEFULNESS — 30% ]</div><h3>Hands back something postable.</h3><p>Not just timestamps — vertical video, captions, thumbnail, title, description, and hashtags. The actual bottleneck (selection) is solved, not just cutting.</p></div>
+    </div>
+  </div>
+</section>
+
+<section style="padding-top:0;">
+  <div class="wrap">
+    <div class="section-head reveal"><div class="kicker">Built with</div></div>
+    <div class="stack reveal stagger">
+      <span class="chip" style="--i:0">Python</span>
+      <span class="chip" style="--i:1">faster-whisper</span>
+      <span class="chip" style="--i:2">ffmpeg / libass</span>
+      <span class="chip" style="--i:3">yt-dlp</span>
+      <span class="chip" style="--i:4">scikit-learn (TF novelty)</span>
+      <span class="chip" style="--i:5">Pillow</span>
+      <span class="chip" style="--i:6">Claude (optional copy polish)</span>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div>
+      <div class="fine">ClipRadar — built solo for the Social Media Automation Hackathon.</div>
+      <div class="endreel" style="margin-top:6px;">■ END OF REEL</div>
+    </div>
+    <a class="btn btn-ghost" href="https://github.com/YOUR-USERNAME/clipradar" target="_blank" rel="noopener">github.com/YOUR-USERNAME/clipradar →</a>
+  </div>
+</footer>
+
+<script>
+  // reveal on scroll, with no-JS-safe fallback already handled by .js class gate
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('in'); });
+    }, { threshold: 0.15 });
+    document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+  } else {
+    document.querySelectorAll('.reveal').forEach(el => el.classList.add('in'));
+  }
+
+  // live "recording" timecode in the status bar (decorative, session-relative)
+  (function(){
+    const el = document.getElementById('tc');
+    if (!el) return;
+    const start = performance.now();
+    function fmt(ms){
+      const totalFrames = Math.floor(ms / 1000 * 30);
+      const ff = totalFrames % 30;
+      const totalSec = Math.floor(totalFrames / 30);
+      const ss = totalSec % 60;
+      const mm = Math.floor(totalSec / 60) % 60;
+      const hh = Math.floor(totalSec / 3600);
+      const p = n => String(n).padStart(2,'0');
+      return `${p(hh)}:${p(mm)}:${p(ss)}:${p(ff)}`;
+    }
+    function tick(){
+      el.textContent = fmt(performance.now() - start);
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  })();
+
+  // video HUD timecode, synced to the actual demo video's currentTime
+  (function(){
+    const v = document.getElementById('demovid');
+    const el = document.getElementById('vidtc');
+    if (!v || !el) return;
+    function fmt(t){
+      const s = Math.floor(t) % 60, m = Math.floor(t/60);
+      return String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0') + ':' + String(Math.floor((t%1)*30)).padStart(2,'0');
+    }
+    v.addEventListener('timeupdate', () => { el.textContent = fmt(v.currentTime); });
+  })();
+
+  // timeline ruler ticks (generated so spacing stays exact regardless of width)
+  (function(){
+    const ruler = document.getElementById('ruler');
+    if (!ruler) return;
+    const totalSec = 60;
+    for (let s = 0; s <= totalSec; s += 5){
+      const pct = (s/totalSec)*100;
+      const major = s % 15 === 0;
+      const t = document.createElement('div');
+      t.className = 'tick' + (major ? ' major' : '');
+      t.style.left = pct + '%';
+      ruler.appendChild(t);
+      if (major){
+        const lbl = document.createElement('div');
+        lbl.className = 'tick-label';
+        lbl.style.left = pct + '%';
+        const mm = String(Math.floor(s/60)).padStart(2,'0'), ss = String(s%60).padStart(2,'0');
+        lbl.textContent = `${mm}:${ss}`;
+        ruler.appendChild(lbl);
+      }
+    }
+  })();
+
+  // score factor bars — real data from a ClipRadar report.json, rendered + animated
+  (function(){
+    const FACTORS = [
+      { key:'hook', label:'Hook strength', weight:'20%', score:0.90, note:'Opens with a proven hook pattern (contrarian/curiosity phrasing)' },
+      { key:'arc', label:'Setup/payoff arc', weight:'15%', score:1.00, note:'Complete setup-and-payoff arc — opens with a question, lands on a resolution' },
+      { key:'novelty', label:'Topical novelty', weight:'15%', score:0.39, note:'Distinct topic vs. rest of the video — works without context' },
+      { key:'emotion', label:'Emotional density', weight:'13%', score:0.51, note:'High emotional/superlative word density (3 charged words)' },
+      { key:'filler', label:'Clean delivery', weight:'10%', score:0.66, note:'Filler-word ratio, inverted — mostly clean speech' },
+      { key:'duration_fit', label:'Duration fit', weight:'10%', score:0.90, note:'29s — right in the sweet spot for Shorts/Reels/TikTok' },
+      { key:'pacing', label:'Pacing dynamics', weight:'10%', score:0.15, note:'Low speech-rate variance in this window' },
+      { key:'energy', label:'Audio energy', weight:'7%', score:0.57, note:'Audio energy spikes in this window (raised voice, emphasis)' },
+    ];
+    const tier = s => s >= 0.7 ? 'tier-green' : s >= 0.4 ? 'tier-amber' : 'tier-red';
+    const list = document.getElementById('factorList');
+    if (!list) return;
+    FACTORS.forEach((f, i) => {
+      const row = document.createElement('div');
+      row.className = 'factor-row';
+      row.innerHTML = `
+        <div class="factor-top">
+          <span class="fname">${f.label} <span class="fweight">[${f.weight}]</span></span>
+          <span class="fscore">${Math.round(f.score*100)}</span>
+        </div>
+        <div class="bar-track"><div class="bar-fill ${tier(f.score)}" data-w="${f.score*100}"></div></div>
+        <div class="factor-note">${f.note}</div>
+      `;
+      list.appendChild(row);
+    });
+    // animate widths once visible
+    const bars = list.querySelectorAll('.bar-fill');
+    if ('IntersectionObserver' in window){
+      const bio = new IntersectionObserver((entries) => {
+        entries.forEach(e => {
+          if (e.isIntersecting){
+            bars.forEach(b => { b.style.width = b.dataset.w + '%'; });
+            bio.disconnect();
+          }
+        });
+      }, { threshold: 0.2 });
+      bio.observe(list);
+    } else {
+      bars.forEach(b => { b.style.width = b.dataset.w + '%'; });
+    }
+  })();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <rect width="32" height="32" rx="4" fill="#000000"/>
+  <!-- corner-bracket viewfinder frame, matching the site's .af utility -->
+  <g fill="none" stroke="#ff2d55" stroke-width="2.4" stroke-linecap="square">
+    <path d="M5 10 V5 H10"/>
+    <path d="M22 5 H27 V10"/>
+    <path d="M27 22 V27 H22"/>
+    <path d="M10 27 H5 V22"/>
+  </g>
+  <!-- radar target lock -->
+  <circle cx="16" cy="16" r="4.3" fill="none" stroke="#5dffa0" stroke-width="1.4"/>
+  <circle cx="16" cy="16" r="1.5" fill="#5dffa0"/>
+</svg>
